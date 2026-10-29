@@ -1,4 +1,4 @@
-name: eco-verify-v2
+name: eco-verify-v3
 on:
   push:
     branches: [main]

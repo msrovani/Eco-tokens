@@ -1,8 +1,8 @@
 {
   "name": "eco-tokens",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
-  "description": "Eco-Tokens v2 — MCP Python zero-dep + smart verify + fingerprint circuit breaker",
+  "description": "Eco-Tokens v3 — Context Engineering & Token Economy (Python MCP, SHA256 anti-loop, CoD)",
   "scripts": {
     "self-test": "bash install.sh --self-test",
     "mcp": "python3 templates/mcp-server.py"

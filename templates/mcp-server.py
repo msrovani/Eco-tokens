@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Eco-Tokens v2 — MCP stdio zero-dependency (stdlib only).
+Eco-Tokens v3 — Context Engineering & Token Economy.
+MCP stdio zero-dependency (stdlib only).
 Tools: get_current_task | update_task_status | run_verification | search_ast_symbol
 """
 from __future__ import annotations
@@ -12,25 +13,29 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 VALID_STATUS = {"TODO", "WORKING", "BLOCKED", "READY_FOR_REVIEW"}
-ANSI_RE = re.compile(r"\x1b\[[0-9;]*[mK]")
+# CSI / OSC-style ANSI (ECMA-48)
+ANSI_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 MAX_SYMBOL_LINES = 25
+MAX_ERR_CHARS = 1000  # ~250 tokens
 
-# Project root: .eco/mcp-server.py → parent.parent; scripts/ fallback → parent
 _HERE = Path(__file__).resolve().parent
 if _HERE.name == ".eco":
     ROOT = _HERE.parent
     ECO_DIR = _HERE
+elif _HERE.name == "templates":
+    ROOT = _HERE.parent
+    ECO_DIR = ROOT / ".eco"
 else:
     ROOT = _HERE.parent
     ECO_DIR = ROOT / ".eco"
 
 STATE_PATH = ECO_DIR / "state.json"
+STATE_TMP = ECO_DIR / "state.json.tmp"
 VERIFY_SH = ROOT / "scripts" / "verify.sh"
 
 
@@ -56,7 +61,7 @@ def fail(req_id: Any, code: int, message: str, data: Any = None) -> None:
 
 def default_state() -> Dict[str, Any]:
     return {
-        "schema": 2,
+        "schema": 3,
         "active_task": {
             "id": 1,
             "domain": "core",
@@ -65,8 +70,11 @@ def default_state() -> Dict[str, Any]:
             "attempts": 0,
             "reason": "",
         },
+        "last_hash": None,
         "last_failed_hash": None,
         "last_diff_hash": None,
+        "last_ok_hash": None,
+        "last_verify_failed": False,
         "verify_failures": 0,
         "updated_at": _now(),
     }
@@ -75,33 +83,24 @@ def default_state() -> Dict[str, Any]:
 def ensure_eco() -> None:
     ECO_DIR.mkdir(parents=True, exist_ok=True)
     if not STATE_PATH.exists():
-        atomic_write_json(STATE_PATH, default_state())
+        atomic_write_json(default_state())
 
 
-def atomic_write_json(path: Path, doc: Dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    backup = path.with_suffix(path.suffix + ".bak")
-    if path.exists():
+def atomic_write_json(doc: Dict[str, Any]) -> None:
+    """Grava via .eco/state.json.tmp → os.replace (atômico)."""
+    ECO_DIR.mkdir(parents=True, exist_ok=True)
+    backup = STATE_PATH.with_suffix(".json.bak")
+    if STATE_PATH.exists():
         try:
-            shutil.copy2(path, backup)
+            shutil.copy2(STATE_PATH, backup)
         except OSError:
             pass
-    fd, tmp_name = tempfile.mkstemp(
-        prefix=".eco-state-", suffix=".tmp", dir=str(path.parent)
-    )
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(doc, fh, ensure_ascii=False, indent=2)
-            fh.write("\n")
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.replace(tmp_name, path)
-    except Exception:
-        try:
-            os.unlink(tmp_name)
-        except OSError:
-            pass
-        raise
+    payload = json.dumps(doc, ensure_ascii=False, indent=2) + "\n"
+    with STATE_TMP.open("w", encoding="utf-8") as fh:
+        fh.write(payload)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(STATE_TMP, STATE_PATH)
 
 
 def read_state() -> Dict[str, Any]:
@@ -111,6 +110,11 @@ def read_state() -> Dict[str, Any]:
             doc = json.load(fh)
         if not isinstance(doc, dict) or "active_task" not in doc:
             raise ValueError("invalid state")
+        # migrate v2 keys
+        if "last_hash" not in doc:
+            doc["last_hash"] = doc.get("last_diff_hash")
+        if "last_verify_failed" not in doc:
+            doc["last_verify_failed"] = bool(doc.get("last_failed_hash"))
         return doc
     except (OSError, ValueError, json.JSONDecodeError):
         bak = STATE_PATH.with_suffix(".json.bak")
@@ -121,13 +125,14 @@ def read_state() -> Dict[str, Any]:
             except (OSError, ValueError, json.JSONDecodeError):
                 pass
         doc = default_state()
-        atomic_write_json(STATE_PATH, doc)
+        atomic_write_json(doc)
         return doc
 
 
 def write_state(doc: Dict[str, Any]) -> None:
+    doc["schema"] = 3
     doc["updated_at"] = _now()
-    atomic_write_json(STATE_PATH, doc)
+    atomic_write_json(doc)
 
 
 def strip_ansi(text: str) -> str:
@@ -135,24 +140,22 @@ def strip_ansi(text: str) -> str:
 
 
 def smart_trim(text: str, failed: bool) -> str:
+    """Head/Tail: se >20 linhas e falha → 5 primeiras + 15 últimas; strip ANSI."""
     clean = strip_ansi(text).replace("\r\n", "\n").replace("\r", "\n")
-    lines = [ln for ln in clean.split("\n")]
-    # drop pure decoration
-    lines = [ln for ln in lines if ln.strip() and not re.fullmatch(r"[-=_*~.]{4,}", ln.strip())]
+    lines = [ln for ln in clean.split("\n") if ln.strip()]
+    lines = [
+        ln
+        for ln in lines
+        if not re.fullmatch(r"[-=_*~.]{4,}", ln.strip())
+    ]
     if not lines:
         return "(empty)"
-    if not failed:
-        return "\n".join(lines[-20:])
-    head = lines[:5]
-    tail = lines[-15:] if len(lines) > 5 else []
-    # de-dupe overlap
-    if len(lines) <= 20:
-        body = lines
+    if not failed or len(lines) <= 20:
+        body = lines[-20:] if not failed else lines
     else:
-        body = head + ["…"] + tail
+        body = lines[:5] + ["…"] + lines[-15:]
     out = "\n".join(body)
-    # hard cap ~250 tokens ≈ 1000 chars
-    if len(out) > 1000:
+    if len(out) > MAX_ERR_CHARS:
         out = out[:500] + "\n…\n" + out[-480:]
     return out
 
@@ -167,9 +170,8 @@ def git_diff_hash() -> str:
             timeout=30,
             check=False,
         )
-        payload = (r.stdout or "") + (r.stderr or "")
-        if r.returncode != 0 and not (r.stdout or "").strip():
-            # unborn / no repo
+        payload = r.stdout or ""
+        if r.returncode != 0 and not payload.strip():
             r2 = subprocess.run(
                 ["git", "diff"],
                 cwd=str(ROOT),
@@ -178,7 +180,7 @@ def git_diff_hash() -> str:
                 timeout=30,
                 check=False,
             )
-            payload = (r2.stdout or "") + (r2.stderr or "")
+            payload = r2.stdout or ""
     except (OSError, subprocess.TimeoutExpired):
         payload = ""
     return hashlib.sha256(payload.encode("utf-8", errors="replace")).hexdigest()
@@ -200,35 +202,15 @@ def git_checkout_hard() -> Tuple[bool, str]:
         return False, str(exc)
 
 
-def find_python() -> str:
-    for cand in (os.environ.get("ECO_PYTHON"), "python3", "python"):
-        if not cand:
-            continue
-        try:
-            r = subprocess.run(
-                [cand, "-c", "import sys; print(sys.version_info[0])"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                check=False,
-            )
-            if r.returncode == 0 and (r.stdout or "").strip().startswith("3"):
-                return cand
-        except (OSError, subprocess.TimeoutExpired):
-            continue
-    return sys.executable or "python3"
-
-
 def find_bash() -> Optional[str]:
-    candidates = [
+    for c in (
         os.environ.get("ECO_BASH"),
         "bash",
         r"C:\Program Files\Git\bin\bash.exe",
         r"C:\Program Files\Git\usr\bin\bash.exe",
         "/bin/bash",
         "/usr/bin/bash",
-    ]
-    for c in candidates:
+    ):
         if not c:
             continue
         try:
@@ -264,51 +246,73 @@ def update_task_status(status: str, reason: str = "") -> Dict[str, Any]:
         task["attempts"] = 0
         doc["verify_failures"] = 0
         doc["last_failed_hash"] = None
+        doc["last_hash"] = None
+        doc["last_verify_failed"] = False
     elif status == "READY_FOR_REVIEW":
         doc["verify_failures"] = 0
+        doc["last_verify_failed"] = False
     doc["active_task"] = task
     doc["last_transition"] = {"from": prev, "to": status, "reason": reason or ""}
     write_state(doc)
     return {"ok": True, "active_task": task}
 
 
+def _trip_circuit_breaker(
+    doc: Dict[str, Any], current_hash: str, reason: str
+) -> Dict[str, Any]:
+    task = doc.get("active_task") or {}
+    reverted, rev_msg = git_checkout_hard()
+    task["status"] = "BLOCKED"
+    task["reason"] = reason
+    task["updated_at"] = _now()
+    doc["active_task"] = task
+    doc["last_hash"] = current_hash
+    doc["last_diff_hash"] = current_hash
+    doc["last_failed_hash"] = current_hash
+    doc["last_verify_failed"] = True
+    doc["verify_failures"] = int(doc.get("verify_failures") or 0) + 1
+    write_state(doc)
+    return {
+        "ok": False,
+        "circuit_breaker": True,
+        "exit_code": 2,
+        "diff_hash": current_hash,
+        "reverted": reverted,
+        "output": (
+            "LOOP DETECTADO: Nenhuma alteração real foi produzida no código "
+            "desde a última falha.\n"
+            "Status=BLOCKED. git checkout . executado (sem nova build).\n"
+            f"hash={current_hash[:16]}… rev={rev_msg[:80]}"
+        ),
+    }
+
+
 def run_verification(dry_run: bool = False) -> Dict[str, Any]:
     doc = read_state()
-    task = doc.get("active_task") or {}
-    status = task.get("status", "TODO")
     current_hash = git_diff_hash()
-    doc["last_diff_hash"] = current_hash
+    last_hash = doc.get("last_hash") or doc.get("last_diff_hash")
+    prev_failed = bool(
+        doc.get("last_verify_failed") or doc.get("last_failed_hash")
+    )
 
-    # Fingerprint circuit breaker: same failed diff while WORKING → BLOCKED
-    last_fail = doc.get("last_failed_hash")
-    if status == "WORKING" and last_fail and current_hash == last_fail:
-        reverted, rev_msg = git_checkout_hard()
-        task["status"] = "BLOCKED"
-        task["reason"] = (
-            "circuit_breaker: git diff fingerprint unchanged after failed verify "
-            "(no real code change)"
+    # Anti-loop: mesmo fingerprint + falha anterior → BLOCKED SEM build
+    if (
+        prev_failed
+        and last_hash
+        and current_hash == last_hash
+        and not dry_run
+    ):
+        return _trip_circuit_breaker(
+            doc,
+            current_hash,
+            "LOOP DETECTADO: fingerprint SHA256(git diff) idêntico após falha",
         )
-        task["updated_at"] = _now()
-        doc["active_task"] = task
-        doc["verify_failures"] = int(doc.get("verify_failures") or 0) + 1
-        write_state(doc)
-        return {
-            "ok": False,
-            "circuit_breaker": True,
-            "exit_code": 2,
-            "diff_hash": current_hash,
-            "reverted": reverted,
-            "output": (
-                "BLOCKED — fingerprint SHA256(git diff) idêntico à falha anterior.\n"
-                "Nenhuma alteração real detectada. git checkout . executado.\n"
-                f"rev={rev_msg[:120]}"
-            ),
-        }
+
+    doc["last_hash"] = current_hash
+    doc["last_diff_hash"] = current_hash
 
     if dry_run:
         write_state(doc)
-        dirty = current_hash != hashlib.sha256(b"").hexdigest()
-        # Compare to last successful snapshot if present
         last_ok = doc.get("last_ok_hash")
         unchanged = last_ok is not None and current_hash == last_ok
         return {
@@ -316,9 +320,10 @@ def run_verification(dry_run: bool = False) -> Dict[str, Any]:
             "dry_run": True,
             "diff_hash": current_hash,
             "unchanged_since_last_ok": unchanged,
+            "last_verify_failed": prev_failed,
             "output": (
-                "DRY_RUN — sem build. "
-                f"dirty={dirty} unchanged_since_last_ok={unchanged}"
+                f"DRY_RUN — sem build. unchanged_since_last_ok={unchanged} "
+                f"prev_failed={prev_failed}"
             ),
         }
 
@@ -351,6 +356,8 @@ def run_verification(dry_run: bool = False) -> Dict[str, Any]:
             check=False,
         )
     except subprocess.TimeoutExpired:
+        doc["last_verify_failed"] = True
+        doc["last_failed_hash"] = current_hash
         write_state(doc)
         return {
             "ok": False,
@@ -365,14 +372,10 @@ def run_verification(dry_run: bool = False) -> Dict[str, Any]:
     exit_code = 1 if r.returncode is None else r.returncode
 
     if failed:
+        doc["last_verify_failed"] = True
         doc["last_failed_hash"] = current_hash
+        doc["last_hash"] = current_hash
         doc["verify_failures"] = int(doc.get("verify_failures") or 0) + 1
-        # Classic breaker: 2 failures with same fingerprint already handled;
-        # also BLOCKED after 2 consecutive failures even if hash changed slightly
-        # but fingerprint path is primary. Keep attempts-aware soft note.
-        if doc["verify_failures"] >= 2 and status == "WORKING":
-            # If second failure and hash equals previous fail OR attempts>=2 with same hash
-            pass
         write_state(doc)
         return {
             "ok": False,
@@ -381,8 +384,10 @@ def run_verification(dry_run: bool = False) -> Dict[str, Any]:
             "output": slim,
         }
 
+    doc["last_verify_failed"] = False
     doc["last_failed_hash"] = None
     doc["last_ok_hash"] = current_hash
+    doc["last_hash"] = current_hash
     doc["verify_failures"] = 0
     write_state(doc)
     return {
@@ -413,53 +418,54 @@ def search_ast_symbol(symbol: str) -> Dict[str, Any]:
 
     tool = "none"
     text = ""
-    # ast-grep
     if shutil.which("ast-grep") or shutil.which("sg"):
         bin_name = "ast-grep" if shutil.which("ast-grep") else "sg"
-        code, text = run(
-            [bin_name, "run", "--pattern", symbol, "-A", "2", "-B", "1"]
-        )
+        _, text = run([bin_name, "run", "--pattern", symbol, "-A", "2", "-B", "1"])
         tool = "ast-grep"
-        if code != 0 or not text.strip():
-            code, text = run(
-                [bin_name, "run", "--pattern", symbol, "--lang", "rust", "-A", "2", "-B", "1"]
-            )
-    if not text.strip() and shutil.which(os.environ.get("ECO_RG", "rg") or "rg"):
+    if not text.strip():
         rg = os.environ.get("ECO_RG", "rg")
-        code, text = run(
+        if shutil.which(rg):
+            _, text = run(
+                [
+                    rg,
+                    "-n",
+                    "--no-heading",
+                    "--color",
+                    "never",
+                    "-m",
+                    str(MAX_SYMBOL_LINES),
+                    "-g",
+                    "!target/**",
+                    "-g",
+                    "!**/node_modules/**",
+                    "-g",
+                    "!.git/**",
+                    "-g",
+                    "!.eco/**",
+                    symbol,
+                    ".",
+                ]
+            )
+            tool = "ripgrep"
+    if not text.strip():
+        grep = shutil.which("grep")
+        if not grep:
+            return {"ok": False, "tool": "none", "snippet": "(no search tool)", "lines": 0}
+        _, text = run(
             [
-                rg,
-                "-n",
-                "--no-heading",
-                "--color",
-                "never",
+                grep,
+                "-RIn",
+                "--exclude-dir=.git",
+                "--exclude-dir=target",
+                "--exclude-dir=node_modules",
+                "--exclude-dir=.eco",
                 "-m",
                 str(MAX_SYMBOL_LINES),
-                "-g",
-                "!target/**",
-                "-g",
-                "!**/node_modules/**",
-                "-g",
-                "!.git/**",
-                "-g",
-                "!.eco/**",
                 symbol,
                 ".",
             ]
         )
-        tool = "ripgrep"
-    if not text.strip():
-        # native grep fallback
-        grep = shutil.which("grep")
-        if grep:
-            code, text = run(
-                [grep, "-RIn", "--exclude-dir=.git", "--exclude-dir=target",
-                 "--exclude-dir=node_modules", "-m", str(MAX_SYMBOL_LINES),
-                 symbol, "."]
-            )
-            tool = "grep"
-        else:
-            return {"ok": False, "tool": "none", "snippet": "(no search tool)", "lines": 0}
+        tool = "grep"
 
     lines = [ln for ln in text.splitlines() if ln.strip()][:MAX_SYMBOL_LINES]
     snippet = "\n".join(lines) if lines else "(no matches)"
@@ -476,7 +482,11 @@ TOOLS = [
     {
         "name": "get_current_task",
         "description": "Retorna apenas a tarefa ativa (.eco/state.json).",
-        "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
     },
     {
         "name": "update_task_status",
@@ -497,14 +507,12 @@ TOOLS = [
     {
         "name": "run_verification",
         "description": (
-            "SHA256(git diff) + circuit breaker; executa scripts/verify.sh; "
-            "dry_run=true só consulta estado sem build."
+            "SHA256(git diff) anti-loop; smart_trim; dry_run=true sem build. "
+            "Loop idêntico pós-falha → BLOCKED sem build."
         ),
         "inputSchema": {
             "type": "object",
-            "properties": {
-                "dry_run": {"type": "boolean", "description": "Sem build se true"},
-            },
+            "properties": {"dry_run": {"type": "boolean"}},
             "additionalProperties": False,
         },
     },
@@ -528,30 +536,42 @@ def call_tool(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
             "content": [
                 {
                     "type": "text",
-                    "text": json.dumps(doc.get("active_task"), ensure_ascii=False, indent=2),
+                    "text": json.dumps(
+                        doc.get("active_task"), ensure_ascii=False, indent=2
+                    ),
                 }
             ]
         }
     if name == "update_task_status":
-        result = update_task_status(args.get("status", ""), args.get("reason", "") or "")
+        result = update_task_status(
+            args.get("status", ""), args.get("reason", "") or ""
+        )
         return {
             "content": [
-                {"type": "text", "text": json.dumps(result, ensure_ascii=False, indent=2)}
+                {
+                    "type": "text",
+                    "text": json.dumps(result, ensure_ascii=False, indent=2),
+                }
             ]
         }
     if name == "run_verification":
-        dry = bool(args.get("dry_run", False))
-        result = run_verification(dry_run=dry)
+        result = run_verification(dry_run=bool(args.get("dry_run", False)))
         return {
             "content": [
-                {"type": "text", "text": json.dumps(result, ensure_ascii=False, indent=2)}
+                {
+                    "type": "text",
+                    "text": json.dumps(result, ensure_ascii=False, indent=2),
+                }
             ]
         }
     if name == "search_ast_symbol":
         result = search_ast_symbol(args.get("symbol", ""))
         return {
             "content": [
-                {"type": "text", "text": json.dumps(result, ensure_ascii=False, indent=2)}
+                {
+                    "type": "text",
+                    "text": json.dumps(result, ensure_ascii=False, indent=2),
+                }
             ]
         }
     raise ValueError(f"Unknown tool: {name}")
@@ -568,7 +588,7 @@ def handle(msg: Dict[str, Any]) -> None:
             {
                 "protocolVersion": params.get("protocolVersion") or "2024-11-05",
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "eco-tokens", "version": "2.0.0"},
+                "serverInfo": {"name": "eco-tokens", "version": "3.0.0"},
             },
         )
         return
@@ -582,7 +602,7 @@ def handle(msg: Dict[str, Any]) -> None:
         args = params.get("arguments") or {}
         try:
             ok(req_id, call_tool(name, args))
-        except Exception as exc:  # noqa: BLE001 — surface to MCP client
+        except Exception as exc:  # noqa: BLE001
             fail(req_id, -32000, str(exc), {"tool": name})
         return
     if method == "ping":
@@ -605,7 +625,11 @@ def main() -> None:
                 {
                     "jsonrpc": "2.0",
                     "id": None,
-                    "error": {"code": -32700, "message": "Parse error", "data": str(exc)},
+                    "error": {
+                        "code": -32700,
+                        "message": "Parse error",
+                        "data": str(exc),
+                    },
                 }
             )
 

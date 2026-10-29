@@ -1,5 +1,5 @@
 {
-  "schema": 2,
+  "schema": 3,
   "active_task": {
     "id": 1,
     "domain": "core",
@@ -8,8 +8,10 @@
     "attempts": 0,
     "reason": ""
   },
+  "last_hash": null,
   "last_failed_hash": null,
   "last_diff_hash": null,
   "last_ok_hash": null,
+  "last_verify_failed": false,
   "verify_failures": 0
 }

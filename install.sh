@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Eco-Tokens v2 — instalador zero-dep (Python3 MCP + smart verify + .eco/)
+# Eco-Tokens v3 — Context Engineering & Token Economy (zero-dep Python MCP)
 # Uso:
 #   ./install.sh [--target DIR] [--force]
 #   ./install.sh --self-test
@@ -110,8 +110,8 @@ write_verify_sh() {
 
   cat >"$dest" <<EOF
 #!/usr/bin/env bash
-# Eco-Tokens v2 verify — stack=${stack}
-# smart_trim: 5 head + 15 tail, strip ANSI, payload curto.
+# Eco-Tokens v3 verify — stack=${stack}
+# smart_trim: se >20 linhas → 5 head + 15 tail; strip ANSI ECMA-48.
 set -uo pipefail
 ROOT="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")/.." && pwd)"
 cd "\$ROOT" || exit 1
@@ -119,11 +119,16 @@ STACK="${stack}"
 LOG="\$(mktemp -t eco-verify.XXXXXX 2>/dev/null || mktemp)"
 trap 'rm -f "\$LOG"' EXIT
 
-strip_ansi() { sed -E 's/\x1b\[[0-9;]*[mK]//g'; }
+strip_ansi() { sed -E 's/\x1B(@|[\[\\]-_]|\[[0-?]*[ -/]*[@-~])//g'; }
 
 smart_trim_fail() {
-  local clean head tail
+  local clean n head tail
   clean="\$(strip_ansi <"\$LOG" | tr -d '\r')"
+  n="\$(printf '%s\n' "\$clean" | sed '/^[[:space:]]*\$/d' | wc -l | tr -d ' ')"
+  if [[ "\${n:-0}" -le 20 ]]; then
+    printf '%s\n' "\$clean" | sed '/^[[:space:]]*\$/d' >&2
+    return
+  fi
   head="\$(printf '%s\n' "\$clean" | sed '/^[[:space:]]*\$/d' | head -n 5)"
   tail="\$(printf '%s\n' "\$clean" | sed '/^[[:space:]]*\$/d' | tail -n 15)"
   echo "----- smart_trim (5 head + 15 tail) -----" >&2
@@ -247,15 +252,15 @@ EOF
 
   cat >"$target/.cursor/rules/eco-tokens.mdc" <<'EOF'
 ---
-description: Eco-Tokens v2 — CHIEF/SPECIALIST/CHECKER + fingerprint circuit breaker
+description: Eco-Tokens v3 — CoD + SHA256 anti-loop + smart_trim
 alwaysApply: true
 ---
 
-# Eco-Tokens v2
+# Eco-Tokens v3
 
-MCP `eco-tokens` (Python): `get_current_task`, `update_task_status`, `run_verification`, `search_ast_symbol`.
-Estado: `.eco/state.json`. PROIBIDO leitura massiva. Sem `run_verification` PASS ≠ concluído.
-BLOCKED → parar em 3 linhas e aguardar humano.
+Ordem: FIXO → REPO → ESTADO → DINÂMICO. CoD ≤5 palavras/passo. Sem filler.
+MCP Python: get_current_task, update_task_status, run_verification, search_ast_symbol.
+Estado `.eco/state.json`. LOOP DETECTADO / BLOCKED → 3 linhas e parar.
 EOF
 
   write_verify_sh "$target/scripts/verify.sh" "$stack"
@@ -287,6 +292,9 @@ EOF
   mkdir -p "$sandbox/tests"
   printf 'def test_ok():\n    assert True\n' >"$sandbox/tests/test_ok.py"
 
+  # git repo mínimo (fingerprint + checkout)
+  (cd "$sandbox" && git init -q && git add -A && git -c user.email=t@t -c user.name=t commit -qm init) || true
+
   FORCE=1
   install_into "$kit" "$sandbox"
 
@@ -300,10 +308,10 @@ EOF
   "$py" -m py_compile "$sandbox/.eco/mcp-server.py" || die "destino py_compile falhou"
   bash -n "$sandbox/scripts/verify.sh" || die "verify bash -n falhou"
 
-  # smoke MCP initialize
+  # smoke MCP initialize (v3)
   printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
-    | (cd "$sandbox" && "$py" .eco/mcp-server.py) | head -n1 | grep -q 'eco-tokens' \
-    || die "MCP initialize falhou"
+    | (cd "$sandbox" && "$py" .eco/mcp-server.py) | head -n1 | grep -q '3.0.0' \
+    || die "MCP initialize v3 falhou"
 
   # dry_run tool
   printf '%s\n' \
@@ -312,8 +320,39 @@ EOF
     | (cd "$sandbox" && "$py" .eco/mcp-server.py) | grep -q 'dry_run' \
     || die "dry_run falhou"
 
+  # anti-loop: last_verify_failed + last_hash == SHA256(git diff) → LOOP sem build
+  "$py" - "$sandbox" <<'PY'
+import hashlib, json, subprocess, sys
+from pathlib import Path
+root = Path(sys.argv[1])
+r = subprocess.run(["git", "diff", "HEAD"], cwd=root, capture_output=True)
+payload = r.stdout or b""
+if r.returncode != 0 and not payload.strip():
+    r = subprocess.run(["git", "diff"], cwd=root, capture_output=True)
+    payload = r.stdout or b""
+h = hashlib.sha256(payload).hexdigest()
+p = root / ".eco" / "state.json"
+doc = json.loads(p.read_text(encoding="utf-8"))
+doc["last_verify_failed"] = True
+doc["last_hash"] = h
+doc["last_failed_hash"] = h
+doc["active_task"]["status"] = "WORKING"
+p.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
+PY
+  out="$(printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"run_verification","arguments":{}}}' \
+    | (cd "$sandbox" && "$py" .eco/mcp-server.py))"
+  printf '%s\n' "$out" | grep -q 'LOOP DETECTADO' || {
+    printf '%s\n' "$out" >&2
+    die "anti-loop SHA256 não disparou"
+  }
+  log "anti-loop OK"
+
   # verify runtime se pytest disponível
   if command -v pytest >/dev/null 2>&1; then
+    # reset state after breaker
+    cp -f "$kit/templates/state.json" "$sandbox/.eco/state.json"
     (cd "$sandbox" && bash ./scripts/verify.sh) || die "verify.sh falhou no sandbox"
   else
     log "skip pytest runtime"
@@ -336,7 +375,7 @@ EOF
   bash -n "$rustbox/scripts/verify.sh"
 
   rm -rf "$sandbox" "$rustbox"
-  log "SELF_TEST_OK v2"
+  log "SELF_TEST_OK v3"
 }
 
 KIT="$(resolve_kit)"

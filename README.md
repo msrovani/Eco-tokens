@@ -1,10 +1,8 @@
-# Eco-Tokens v2
+# Eco-Tokens v3 — Context Engineering & Token Economy
 
-**Orquestração Econômica de Agentes** — bootstrap zero-dependency (Python 3 stdlib + Bash). Move inteligência da janela de contexto para scripts determinísticos locais.
+Bootstrap **zero-dependency** (Python 3 stdlib + Bash) que move inteligência da janela de contexto para validações determinísticas locais.
 
-## Instalação (1 linha)
-
-No projeto alvo:
+## Instalação em 1 linha
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/msrovani/Eco-tokens/main/install.sh | bash
@@ -16,46 +14,47 @@ Self-test do kit:
 ./install.sh --self-test
 ```
 
-Prompt para IDE: veja [`BOOTSTRAP.md`](./BOOTSTRAP.md).
+Prompt para IDE: [`BOOTSTRAP.md`](./BOOTSTRAP.md).
 
-## O que muda na v2
+## Anti-Loop SHA256
 
-| v1 | v2 |
-|----|----|
-| MCP Node (`mcp-server.js`) | MCP Python stdlib (`.eco/mcp-server.py`) |
-| `tail -n 20` cego | `smart_trim`: 5 head + 15 tail, strip ANSI |
-| `.tasks.json` direto | `.eco/state.json` com write atômico + `.bak` |
-| Circuit breaker só por `attempts` | Fingerprint `SHA256(git diff)` → BLOCKED + `git checkout .` |
-| — | `run_verification(dry_run=true)` sem build |
+Cada `run_verification` calcula `hash = SHA256(git diff)`.
 
-## Layout instalado no alvo
+| Condição | Ação |
+|----------|------|
+| `hash == last_hash` **e** verificação anterior falhou | Circuit breaker **sem build**: `git checkout .`, status `BLOCKED`, mensagem `LOOP DETECTADO…` |
+| Diff mudou | Roda `scripts/verify.sh` + `smart_trim` |
+| `dry_run=true` | Só consulta fingerprint / estado |
+
+## Higienização Head/Tail (`smart_trim`)
+
+- Remove ANSI (`\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])`).
+- Se erro com **>20 linhas**: **5 primeiras** (tipo/cabeçalho) + **15 últimas** (stack/local) — meio descartado.
+- Cap ~1000 chars (~250 tokens).
+
+## Estado atômico
+
+`.eco/state.json` gravado via `.eco/state.json.tmp` + `os.replace` (+ `.bak`).
+
+## Layout no projeto alvo
 
 ```
-.eco/mcp-server.py      # MCP stdio
-.eco/state.json         # estado + hashes
-scripts/verify.sh       # smart_trim por stack
-.cursorrules / .windsurfrules
-.cursor/mcp.json        # python3 .eco/mcp-server.py
+.eco/mcp-server.py
+.eco/state.json
+scripts/verify.sh          # stack-aware + smart_trim
+.cursorrules / .windsurfrules   # CoD + cache-friendly
+.cursor/mcp.json           # python3 .eco/mcp-server.py
 ```
 
-## MCP tools
+## Papéis + CoD
 
-- `get_current_task` — só a tarefa ativa
-- `update_task_status(status, reason)` — atômico
-- `run_verification` — fingerprint + verify + sanitize (`dry_run` opcional)
-- `search_ast_symbol` — ast-grep → rg → grep (≤25 linhas)
-
-## Papéis (economia de tokens)
-
-**CHIEF** orquestra · **SPECIALIST** edita cirúrgico · **CHECKER** só valida.
-
-Payloads de erro tipicamente **&lt;250 tokens**. BLOCKED → parar em 3 linhas e aguardar humano.
+- **CHIEF** orquestra · **SPECIALIST** edita · **CHECKER** valida.
+- Chain-of-Draft: ≤5 palavras/passo de raciocínio; sem filler conversacional.
+- Ordem de prompt: FIXO → REPO → ESTADO → DINÂMICO (cache-friendly).
 
 ## Requisitos
 
-- Python ≥ 3.8 (stdlib)
-- Bash (Git Bash no Windows)
-- Opcional: `rg` / `ast-grep`, toolchain da stack do projeto
+Python ≥ 3.8 · Bash · opcional `rg`/`ast-grep`
 
 ## Licença
 

@@ -1,33 +1,40 @@
-# Eco-Tokens v2 — Orquestração Econômica de Agentes (inviolável)
-# Papéis: CHIEF | SPECIALIST | CHECKER
+# Eco-Tokens v3 — Context Engineering & Token Economy
+# Ordem cache-friendly: FIXO → REPO → ESTADO → DINÂMICO
 
-## Papéis
-- **CHIEF**: define a tarefa via MCP `get_current_task` / `update_task_status`; não implementa código.
-- **SPECIALIST**: implementa o `objective` com mudanças mínimas; só após `search_ast_symbol`.
-- **CHECKER**: só valida — `run_verification` (ou `dry_run=true` se nada mudou); promove/reprova status.
+## [FIXO] Instruções de sistema (não alterar por tarefa)
+- Stack: MCP `eco-tokens` (Python stdlib) + `scripts/verify.sh` + `.eco/state.json`.
+- Tools: `get_current_task` | `update_task_status` | `run_verification` | `search_ast_symbol`.
+- Papéis: CHIEF (orquestra) · SPECIALIST (edita) · CHECKER (valida).
+- Anti-loop: `SHA256(git diff)` idêntico após falha → `BLOCKED` sem build + `git checkout .`.
+- Logs: `smart_trim` (5 head + 15 tail, strip ANSI) — payload curto.
 
-## [PROIBIÇÃO] — leitura ampla
-- PROIBIDO ler diretórios inteiros ou múltiplos arquivos sem consulta cirúrgica.
-- OBRIGATÓRIO localizar código com MCP `search_ast_symbol(symbol)` (≤25 linhas).
-- Exceção: payload já retornado pela tool ou estado via `get_current_task`.
+## [FIXO] Chain-of-Draft (CoD)
+- Pensamento interno: **máx. 5 palavras por passo**.
+- PROIBIDO filler: "Entendi", "Vou analisar", "Certamente", "Claro", "Deixa eu ver".
+- Chat visível: **3–5 linhas** operacionais; sem narrativa.
 
-## [VALIDAÇÃO] — gate de conclusão
-- PROIBIDO declarar conclusão sem confirmação `PASS`/`ok:true` de `run_verification`.
-- Antes de editar: `update_task_status("WORKING", reason)`.
-- Sucesso → `update_task_status("READY_FOR_REVIEW", reason)`.
-- CHECKER pode usar `run_verification({dry_run:true})` se o fingerprint não mudou.
+## [REPO] Regras deste repositório
+- Estado canônico: `.eco/state.json` (atômico). Não inventar paths.
+- Verify: só via MCP `run_verification` (ou `dry_run=true` se fingerprint estável).
+- Busca: só `search_ast_symbol` (≤25 linhas). Sem dump de arquivo/dir.
 
-## [CIRCUIT BREAKER] — fingerprint + BLOCKED
-- O MCP calcula `SHA256(git diff)`. Diff idêntico após falha → `BLOCKED` + `git checkout .` local.
-- Ao atingir **BLOCKED** (MCP ou 2 falhas): a IA deve **IMEDIATAMENTE** parar, emitir o motivo exato em **3 linhas**, e aguardar intervenção humana — sem novos patches.
+## [ESTADO] Tarefa ativa
+- Sempre iniciar com `get_current_task`.
+- Editar só se `status` ∈ {TODO, WORKING, READY_FOR_REVIEW}.
+- Se `BLOCKED`: parar. Não patchar.
 
-## [VERBOSIDADE]
-- Chat: no máximo **3–5 linhas** operacionais.
-- Erros: confiar no `smart_trim` do verify/MCP (<250 tokens).
+## [DINÂMICO] Instrução da vez
+1. CHIEF: `update_task_status("WORKING", …)` se for executar.
+2. SPECIALIST: `search_ast_symbol` → diff mínimo.
+3. CHECKER: `run_verification` → exige `ok:true` / PASS.
+4. Sucesso → `READY_FOR_REVIEW`. Falha com mesmo hash → MCP já BLOCKED.
 
-## Fluxo canônico
-1. `get_current_task`
-2. `update_task_status("WORKING", …)`
-3. `search_ast_symbol` → editar mínimo
-4. `run_verification` (dry_run se apropriado)
-5. OK → `READY_FOR_REVIEW` | BLOCKED → parar 3 linhas + humano
+## [PROIBIÇÃO]
+- PROIBIDO ler diretórios/arquivos em massa sem `search_ast_symbol`.
+- PROIBIDO declarar sucesso sem PASS de `run_verification`.
+
+## [CIRCUITO]
+- Ao receber `BLOCKED` / `circuit_breaker` / "LOOP DETECTADO":
+  1. Interromper no mesmo instante.
+  2. Emitir **exatamente 3 linhas** com diagnóstico do bloqueio.
+  3. Aguardar humano — zero patches novos.
