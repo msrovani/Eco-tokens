@@ -1,0 +1,13 @@
+---
+description: Eco-Tokens — protocolo CHIEF/SPECIALIST/CHECKER (MCP + verify)
+alwaysApply: true
+---
+
+# Eco-Tokens
+
+Espelha `.cursorrules`. Use MCP `eco-tokens`: `get_current_task`, `update_task_status`, `run_verification`, `search_ast_symbol`.
+
+- Proibido ler arquivos/dirs inteiros — use `search_ast_symbol`.
+- Proibido concluir sem `run_verification`.
+- 2 falhas seguidas de verify → `BLOCKED` + `git checkout .` + parar.
+- Respostas: 3–5 linhas.
