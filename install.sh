@@ -310,8 +310,8 @@ EOF
 
   # smoke MCP initialize (v3)
   printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
-    | (cd "$sandbox" && "$py" .eco/mcp-server.py) | head -n1 | grep -q '3.0.0' \
-    || die "MCP initialize v3 falhou"
+    | (cd "$sandbox" && "$py" .eco/mcp-server.py) | head -n1 | grep -q '0.3.0' \
+    || die "MCP initialize 0.3 falhou"
 
   # dry_run tool
   printf '%s\n' \
@@ -375,7 +375,7 @@ EOF
   bash -n "$rustbox/scripts/verify.sh"
 
   rm -rf "$sandbox" "$rustbox"
-  log "SELF_TEST_OK v3"
+  log "SELF_TEST_OK 0.3.0"
 }
 
 KIT="$(resolve_kit)"

@@ -1,9 +1,10 @@
 {
   "name": "eco-tokens",
-  "version": "3.0.0",
+  "version": "0.3.0",
   "private": true,
-  "description": "Eco-Tokens v3 — Context Engineering & Token Economy (Python MCP, SHA256 anti-loop, CoD)",
+  "description": "Eco-Tokens 0.3 — Context Engineering & Token Economy (Python MCP, SHA256 anti-loop, CoD)",
   "scripts": {
+    "test": "bash scripts/run-tests.sh",
     "self-test": "bash install.sh --self-test",
     "mcp": "python3 templates/mcp-server.py"
   },

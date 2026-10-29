@@ -588,7 +588,7 @@ def handle(msg: Dict[str, Any]) -> None:
             {
                 "protocolVersion": params.get("protocolVersion") or "2024-11-05",
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "eco-tokens", "version": "3.0.0"},
+                "serverInfo": {"name": "eco-tokens", "version": "0.3.0"},
             },
         )
         return

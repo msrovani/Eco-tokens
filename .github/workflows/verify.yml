@@ -1,20 +1,18 @@
-name: eco-verify-v3
+name: eco-verify-0.3
 on:
   push:
     branches: [main]
   pull_request:
 
 jobs:
-  self-test:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: self-test
+      - name: full suite
         run: |
-          chmod +x install.sh
-          python3 -m py_compile templates/mcp-server.py
-          bash -n install.sh
-          ./install.sh --self-test
+          chmod +x install.sh scripts/run-tests.sh tests/test_install_integration.sh
+          bash scripts/run-tests.sh

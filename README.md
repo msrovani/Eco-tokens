@@ -1,6 +1,8 @@
-# Eco-Tokens v3 — Context Engineering & Token Economy
+# Eco-Tokens 0.3 — Context Engineering & Token Economy
 
 Bootstrap **zero-dependency** (Python 3 stdlib + Bash) que move inteligência da janela de contexto para validações determinísticas locais.
+
+**Versão:** `0.3.0` · protocolo interno v3 · tag `v0.3.0`
 
 ## Instalação em 1 linha
 
@@ -8,10 +10,13 @@ Bootstrap **zero-dependency** (Python 3 stdlib + Bash) que move inteligência da
 curl -sSL https://raw.githubusercontent.com/msrovani/Eco-tokens/main/install.sh | bash
 ```
 
-Self-test do kit:
+## Testes
 
 ```bash
+bash scripts/run-tests.sh
+# ou
 ./install.sh --self-test
+python3 -m unittest discover -s tests -v
 ```
 
 Prompt para IDE: [`BOOTSTRAP.md`](./BOOTSTRAP.md).

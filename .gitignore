@@ -5,7 +5,11 @@ node_modules/
 target/
 .venv/
 __pycache__/
+**/__pycache__/
+*.py[cod]
 .fixtures/
+.eco/
+!.eco/.gitkeep
 
 .eco/*.bak
 .eco/*.tmp

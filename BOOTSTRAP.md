@@ -1,7 +1,7 @@
-# BOOTSTRAP v3 — cole na IDE de QUALQUER projeto alvo
+# BOOTSTRAP 0.3 — cole na IDE de QUALQUER projeto alvo
 
 ```text
-Instale Eco-Tokens v3 (Context Engineering & Token Economy) neste projeto:
+Instale Eco-Tokens 0.3 (Context Engineering & Token Economy):
 https://github.com/msrovani/Eco-tokens
 
 1) curl -sSL https://raw.githubusercontent.com/msrovani/Eco-tokens/main/install.sh | bash
@@ -12,7 +12,7 @@ https://github.com/msrovani/Eco-tokens
 
 3) python3 -m py_compile .eco/mcp-server.py && bash scripts/verify.sh
 
-4) Recarregue MCP. Anti-loop SHA256 + smart_trim ativos. Sem Node.
+4) Recarregue MCP. Anti-loop SHA256 + smart_trim + CoD. Sem Node.
 
 Resposta: máx. 5 linhas. CoD: ≤5 palavras/passo.
 ```
