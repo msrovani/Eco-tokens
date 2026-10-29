@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "eco-tokens": {
-      "command": "node",
-      "args": ["templates/mcp-server.js"],
+      "command": "python3",
+      "args": ["templates/mcp-server.py"],
       "cwd": "${workspaceFolder}"
     }
   }

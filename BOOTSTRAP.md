@@ -1,38 +1,22 @@
-# BOOTSTRAP — cole isto na IDE de QUALQUER projeto alvo
-
-Copie o bloco abaixo para o chat do Cursor/Windsurf no repositório que deve receber o Eco-Tokens:
-
----
+# BOOTSTRAP v2 — cole na IDE de QUALQUER projeto alvo
 
 ```text
-Instale o Eco-Tokens neste projeto atual a partir de
+Instale Eco-Tokens v2 neste projeto a partir de
 https://github.com/msrovani/Eco-tokens
 
-Faça o seguinte, sem pedir confirmação extra:
-
-1. No terminal do workspace, execute UMA destas opções (prefira a primeira se houver rede):
-
+1) Preferir:
    curl -sSL https://raw.githubusercontent.com/msrovani/Eco-tokens/main/install.sh | bash
 
-   OU, se curl|bash falhar:
-
+   Fallback:
    git clone --depth 1 https://github.com/msrovani/Eco-tokens.git /tmp/Eco-tokens
    bash /tmp/Eco-tokens/install.sh --target "$(pwd)" --force
 
-2. Confirme que existem: `.tasks.json`, `scripts/verify.sh`, `scripts/mcp-server.js`,
-   `.cursorrules`, `.windsurfrules`, `.cursor/mcp.json`.
+2) Confirme: `.eco/mcp-server.py`, `.eco/state.json`, `scripts/verify.sh`,
+   `.cursorrules`, `.windsurfrules`, `.cursor/mcp.json` (command=python3).
 
-3. Rode `bash scripts/verify.sh` e reporte VERIFY_OK ou as últimas linhas de falha.
+3) Rode `python3 -m py_compile .eco/mcp-server.py` e `bash scripts/verify.sh`.
 
-4. Avise que o MCP `eco-tokens` precisa ser recarregado na IDE (Node ≥ 18 no PATH).
+4) Recarregue o MCP `eco-tokens` (Python 3 no PATH). Sem Node.
 
 Responda em no máximo 5 linhas.
-```
-
----
-
-## Alternativa só-terminal (sem IA)
-
-```bash
-curl -sSL https://raw.githubusercontent.com/msrovani/Eco-tokens/main/install.sh | bash
 ```

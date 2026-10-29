@@ -1,0 +1,15 @@
+{
+  "schema": 2,
+  "active_task": {
+    "id": 1,
+    "domain": "core",
+    "status": "TODO",
+    "objective": "Setup inicial",
+    "attempts": 0,
+    "reason": ""
+  },
+  "last_failed_hash": null,
+  "last_diff_hash": null,
+  "last_ok_hash": null,
+  "verify_failures": 0
+}

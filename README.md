@@ -1,80 +1,62 @@
-# Eco-Tokens
+# Eco-Tokens v2
 
-**Orquestração Econômica de Agentes** — pacote autoinstalável de bootstrap para qualquer projeto (Rust, Node, Python, Go, C/C++).
+**Orquestração Econômica de Agentes** — bootstrap zero-dependency (Python 3 stdlib + Bash). Move inteligência da janela de contexto para scripts determinísticos locais.
 
-Objetivo: cortar tokens e loops ruins. A IA não lê o repo inteiro, não declara “feito” sem teste, e após 2 falhas de verify trava (circuit breaker).
+## Instalação (1 linha)
 
-## Instalação em 1 linha (terminal)
-
-No diretório do **projeto alvo**:
+No projeto alvo:
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/msrovani/Eco-tokens/main/install.sh | bash
 ```
 
-Clone local:
-
-```bash
-git clone https://github.com/msrovani/Eco-tokens.git
-cd Eco-tokens && ./install.sh --self-test   # valida o kit
-./install.sh --target /caminho/do/projeto   # instala no alvo
-```
-
-## Instalação em 1 linha (prompt de IDE)
-
-Cole o conteúdo de [`BOOTSTRAP.md`](./BOOTSTRAP.md) no chat do projeto destino, ou use:
-
-```text
-Acesse https://github.com/msrovani/Eco-tokens e execute install.sh neste projeto.
-Configure MCP e regras de orquestração de economia de tokens automaticamente.
-```
-
-## O que o instalador faz
-
-1. Detecta a stack (`Cargo.toml`, `package.json`, `pyproject`/`pytest`, `go.mod`, CMake/Make).
-2. Gera `scripts/verify.sh` customizado (testes silenciosos; em falha, só 20 linhas de log).
-3. Copia `scripts/mcp-server.js` e `.tasks.json`.
-4. Injeta `.cursorrules`, `.windsurfrules` e `.cursor/mcp.json` (+ rule `eco-tokens.mdc`).
-5. `chmod +x` nos scripts gerados.
-
-## Economia de tokens e papéis
-
-| Papel | Função |
-|-------|--------|
-| **CHIEF** | Escolhe/atualiza a tarefa via MCP; não implementa |
-| **SPECIALIST** | Edita o mínimo, só após `search_ast_symbol` |
-| **CHECKER** | Só valida com `run_verification` |
-
-Regras duras:
-
-- **Proibição**: sem leitura massiva de arquivos/dirs — use `search_ast_symbol` (≤30 linhas).
-- **Validação**: sem `run_verification` não há “concluído”.
-- **Circuit breaker**: 2 falhas seguidas → `BLOCKED` + `git checkout .` + parar.
-- **Verbosidade**: 3–5 linhas de resumo no chat.
-
-## MCP tools
-
-`get_current_task` · `update_task_status` · `run_verification` · `search_ast_symbol`
-
-Requer **Node.js ≥ 18** no PATH da IDE.
-
-## Layout do kit
-
-```
-install.sh              # bootstrap / instalador
-BOOTSTRAP.md            # prompt pronto para outras IDEs
-templates/
-  tasks.json
-  rules.markdown
-  mcp-server.js
-```
-
-## Self-test
+Self-test do kit:
 
 ```bash
 ./install.sh --self-test
 ```
 
+Prompt para IDE: veja [`BOOTSTRAP.md`](./BOOTSTRAP.md).
+
+## O que muda na v2
+
+| v1 | v2 |
+|----|----|
+| MCP Node (`mcp-server.js`) | MCP Python stdlib (`.eco/mcp-server.py`) |
+| `tail -n 20` cego | `smart_trim`: 5 head + 15 tail, strip ANSI |
+| `.tasks.json` direto | `.eco/state.json` com write atômico + `.bak` |
+| Circuit breaker só por `attempts` | Fingerprint `SHA256(git diff)` → BLOCKED + `git checkout .` |
+| — | `run_verification(dry_run=true)` sem build |
+
+## Layout instalado no alvo
+
+```
+.eco/mcp-server.py      # MCP stdio
+.eco/state.json         # estado + hashes
+scripts/verify.sh       # smart_trim por stack
+.cursorrules / .windsurfrules
+.cursor/mcp.json        # python3 .eco/mcp-server.py
+```
+
+## MCP tools
+
+- `get_current_task` — só a tarefa ativa
+- `update_task_status(status, reason)` — atômico
+- `run_verification` — fingerprint + verify + sanitize (`dry_run` opcional)
+- `search_ast_symbol` — ast-grep → rg → grep (≤25 linhas)
+
+## Papéis (economia de tokens)
+
+**CHIEF** orquestra · **SPECIALIST** edita cirúrgico · **CHECKER** só valida.
+
+Payloads de erro tipicamente **&lt;250 tokens**. BLOCKED → parar em 3 linhas e aguardar humano.
+
+## Requisitos
+
+- Python ≥ 3.8 (stdlib)
+- Bash (Git Bash no Windows)
+- Opcional: `rg` / `ast-grep`, toolchain da stack do projeto
+
 ## Licença
 
-MIT — veja `LICENSE`.
+MIT

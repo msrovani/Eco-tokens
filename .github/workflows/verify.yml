@@ -1,4 +1,4 @@
-name: eco-verify
+name: eco-verify-v2
 on:
   push:
     branches: [main]
@@ -9,10 +9,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-python@v5
         with:
-          node-version: "20"
-      - name: install.sh --self-test
+          python-version: "3.12"
+      - name: self-test
         run: |
           chmod +x install.sh
+          python3 -m py_compile templates/mcp-server.py
+          bash -n install.sh
           ./install.sh --self-test

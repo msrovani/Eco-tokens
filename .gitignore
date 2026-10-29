@@ -6,3 +6,7 @@ target/
 .venv/
 __pycache__/
 .fixtures/
+
+.eco/*.bak
+.eco/*.tmp
+

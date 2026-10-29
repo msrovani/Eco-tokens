@@ -1,34 +1,33 @@
-# Eco-Tokens — Orquestração Econômica de Agentes
-# Protocolo obrigatório para papéis CHIEF | SPECIALIST | CHECKER
+# Eco-Tokens v2 — Orquestração Econômica de Agentes (inviolável)
+# Papéis: CHIEF | SPECIALIST | CHECKER
 
 ## Papéis
-- **CHIEF**: define/seleciona a tarefa em `.tasks.json` via MCP `get_current_task` / `update_task_status`; não implementa.
-- **SPECIALIST**: implementa o `objective` da tarefa ativa com mudanças mínimas e cirúrgicas.
-- **CHECKER**: só valida; chama `run_verification` e promove/reprova status.
+- **CHIEF**: define a tarefa via MCP `get_current_task` / `update_task_status`; não implementa código.
+- **SPECIALIST**: implementa o `objective` com mudanças mínimas; só após `search_ast_symbol`.
+- **CHECKER**: só valida — `run_verification` (ou `dry_run=true` se nada mudou); promove/reprova status.
 
 ## [PROIBIÇÃO] — leitura ampla
-- Proibido ler arquivos ou diretórios inteiros (`Read` em massa, `Glob` amplo, dump de pasta).
-- Obrigatório localizar código com MCP `search_ast_symbol(symbol)` (ripgrep/ast-grep, ≤30 linhas).
-- Exceção: arquivos ≤40 linhas já retornados pelo trecho da busca, ou `.tasks.json` via `get_current_task`.
+- PROIBIDO ler diretórios inteiros ou múltiplos arquivos sem consulta cirúrgica.
+- OBRIGATÓRIO localizar código com MCP `search_ast_symbol(symbol)` (≤25 linhas).
+- Exceção: payload já retornado pela tool ou estado via `get_current_task`.
 
 ## [VALIDAÇÃO] — gate de conclusão
-- Proibido declarar tarefa concluída sem chamar MCP `run_verification`.
-- Sucesso (`VERIFY_OK`) → `update_task_status("READY_FOR_REVIEW", reason)`.
+- PROIBIDO declarar conclusão sem confirmação `PASS`/`ok:true` de `run_verification`.
 - Antes de editar: `update_task_status("WORKING", reason)`.
+- Sucesso → `update_task_status("READY_FOR_REVIEW", reason)`.
+- CHECKER pode usar `run_verification({dry_run:true})` se o fingerprint não mudou.
 
-## [CIRCUIT BREAKER]
-- Se `run_verification` falhar **2 vezes seguidas** na mesma tarefa (`attempts` / falhas de verify):
-  1. `update_task_status("BLOCKED", "verify failed twice")`
-  2. `git checkout .` (reverter working tree)
-  3. Parar e solicitar intervenção humana — sem novos patches.
+## [CIRCUIT BREAKER] — fingerprint + BLOCKED
+- O MCP calcula `SHA256(git diff)`. Diff idêntico após falha → `BLOCKED` + `git checkout .` local.
+- Ao atingir **BLOCKED** (MCP ou 2 falhas): a IA deve **IMEDIATAMENTE** parar, emitir o motivo exato em **3 linhas**, e aguardar intervenção humana — sem novos patches.
 
 ## [VERBOSIDADE]
-- Respostas de chat: no máximo **3–5 linhas** de resumo operacional.
-- Sem dumps longos de log; use o output enxuto do MCP.
+- Chat: no máximo **3–5 linhas** operacionais.
+- Erros: confiar no `smart_trim` do verify/MCP (<250 tokens).
 
 ## Fluxo canônico
 1. `get_current_task`
 2. `update_task_status("WORKING", …)`
 3. `search_ast_symbol` → editar mínimo
-4. `run_verification`
-5. OK → `READY_FOR_REVIEW` | 2× FAIL → `BLOCKED` + `git checkout .`
+4. `run_verification` (dry_run se apropriado)
+5. OK → `READY_FOR_REVIEW` | BLOCKED → parar 3 linhas + humano
