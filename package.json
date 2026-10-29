@@ -1,14 +1,15 @@
 {
   "name": "eco-tokens",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
-  "description": "Orquestração Econômica de Agentes — MCP + verify + task state",
+  "description": "Bootstrap autoinstalável — orquestração econômica de agentes (MCP + verify + tasks)",
   "bin": {
-    "eco-tokens-mcp": "./scripts/mcp-server.js"
+    "eco-tokens-mcp": "./templates/mcp-server.js"
   },
   "scripts": {
-    "mcp": "node scripts/mcp-server.js",
-    "verify": "bash scripts/verify.sh"
+    "mcp": "node templates/mcp-server.js",
+    "self-test": "bash install.sh --self-test",
+    "install-kit": "bash install.sh"
   },
   "engines": {
     "node": ">=18"

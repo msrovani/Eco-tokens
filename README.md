@@ -1,57 +1,79 @@
 # Eco-Tokens
 
-**Orquestração Econômica de Agentes** — kit portable para IDEs (Cursor/Windsurf): estado de tarefa, verificação determinística enxuta e MCP local com 4 tools.
+**Orquestração Econômica de Agentes** — pacote autoinstalável de bootstrap para qualquer projeto (Rust, Node, Python, Go, C/C++).
 
-## Ideia
+Objetivo: cortar tokens e loops ruins. A IA não lê o repo inteiro, não declara “feito” sem teste, e após 2 falhas de verify trava (circuit breaker).
 
-Minimizar tokens e loops ruins: a IA não lê o repo inteiro, não declara “feito” sem teste, e após 2 falhas de verify trava (circuit breaker) pedindo humano.
+## Instalação em 1 linha (terminal)
 
-## Artefatos
-
-| Path | Função |
-|------|--------|
-| `.tasks.json` | Estado da tarefa ativa |
-| `scripts/verify.sh` | Detecta stack (Rust/Node/Python/Go) e roda testes; stderr truncado (20 linhas) |
-| `scripts/mcp-server.js` | MCP stdio: `get_current_task`, `update_task_status`, `run_verification`, `search_ast_symbol` |
-| `.cursor/mcp.json` | Registro do servidor MCP |
-| `.cursorrules` | Protocolo CHIEF / SPECIALIST / CHECKER |
-| `.cursor/rules/eco-tokens.mdc` | Mesma regra com `alwaysApply` (Cursor moderno) |
-| `scripts/install-into.sh` | Copia o kit para outro repositório |
-
-## Requisitos
-
-- Bash (Git Bash no Windows)
-- Node.js ≥ 18 (só para o MCP)
-- `rg` (ripgrep) ou `ast-grep` para `search_ast_symbol`
-
-## Uso rápido neste repo
+No diretório do **projeto alvo**:
 
 ```bash
-chmod +x scripts/verify.sh scripts/mcp-server.js scripts/install-into.sh
-./scripts/verify.sh
+curl -sSL https://raw.githubusercontent.com/msrovani/Eco-tokens/main/install.sh | bash
 ```
 
-No Cursor: habilite o MCP **eco-tokens** (`.cursor/mcp.json`).
-
-## Instalar em outro projeto
+Clone local:
 
 ```bash
-./scripts/install-into.sh /caminho/do/seu/projeto
+git clone https://github.com/msrovani/Eco-tokens.git
+cd Eco-tokens && ./install.sh --self-test   # valida o kit
+./install.sh --target /caminho/do/projeto   # instala no alvo
 ```
 
-Depois, no projeto alvo, rode `./scripts/verify.sh` e recarregue o MCP.
+## Instalação em 1 linha (prompt de IDE)
 
-## Variáveis
+Cole o conteúdo de [`BOOTSTRAP.md`](./BOOTSTRAP.md) no chat do projeto destino, ou use:
 
-| Var | Efeito |
-|-----|--------|
-| `ECO_VERIFY_FULL=1` | Rust: `cargo test --workspace --lib` (em vez do smoke) |
-| `ECO_VERIFY_PACKAGE=foo` | Rust smoke: `cargo test -p <crate> --lib` |
-| `ECO_BASH` / `ECO_RG` | Override dos binários |
+```text
+Acesse https://github.com/msrovani/Eco-tokens e execute install.sh neste projeto.
+Configure MCP e regras de orquestração de economia de tokens automaticamente.
+```
 
-## Status da tarefa
+## O que o instalador faz
 
-`TODO` → `WORKING` → `READY_FOR_REVIEW` | `BLOCKED`
+1. Detecta a stack (`Cargo.toml`, `package.json`, `pyproject`/`pytest`, `go.mod`, CMake/Make).
+2. Gera `scripts/verify.sh` customizado (testes silenciosos; em falha, só 20 linhas de log).
+3. Copia `scripts/mcp-server.js` e `.tasks.json`.
+4. Injeta `.cursorrules`, `.windsurfrules` e `.cursor/mcp.json` (+ rule `eco-tokens.mdc`).
+5. `chmod +x` nos scripts gerados.
+
+## Economia de tokens e papéis
+
+| Papel | Função |
+|-------|--------|
+| **CHIEF** | Escolhe/atualiza a tarefa via MCP; não implementa |
+| **SPECIALIST** | Edita o mínimo, só após `search_ast_symbol` |
+| **CHECKER** | Só valida com `run_verification` |
+
+Regras duras:
+
+- **Proibição**: sem leitura massiva de arquivos/dirs — use `search_ast_symbol` (≤30 linhas).
+- **Validação**: sem `run_verification` não há “concluído”.
+- **Circuit breaker**: 2 falhas seguidas → `BLOCKED` + `git checkout .` + parar.
+- **Verbosidade**: 3–5 linhas de resumo no chat.
+
+## MCP tools
+
+`get_current_task` · `update_task_status` · `run_verification` · `search_ast_symbol`
+
+Requer **Node.js ≥ 18** no PATH da IDE.
+
+## Layout do kit
+
+```
+install.sh              # bootstrap / instalador
+BOOTSTRAP.md            # prompt pronto para outras IDEs
+templates/
+  tasks.json
+  rules.markdown
+  mcp-server.js
+```
+
+## Self-test
+
+```bash
+./install.sh --self-test
+```
 
 ## Licença
 

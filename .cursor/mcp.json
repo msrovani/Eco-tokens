@@ -2,7 +2,7 @@
   "mcpServers": {
     "eco-tokens": {
       "command": "node",
-      "args": ["scripts/mcp-server.js"],
+      "args": ["templates/mcp-server.js"],
       "cwd": "${workspaceFolder}"
     }
   }

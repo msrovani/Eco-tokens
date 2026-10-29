@@ -5,14 +5,14 @@ on:
   pull_request:
 
 jobs:
-  verify:
+  self-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: verify
+      - name: install.sh --self-test
         run: |
-          chmod +x scripts/verify.sh scripts/install-into.sh scripts/mcp-server.js
-          ./scripts/verify.sh
+          chmod +x install.sh
+          ./install.sh --self-test
